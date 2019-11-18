@@ -3,7 +3,10 @@ package main
 import (
 	"encoding/json"
 	"io/ioutil"
+	"log"
 	"net/http"
+	"os/exec"
+	"runtime"
 	"strconv"
 
 	"github.com/labstack/echo"
@@ -42,7 +45,10 @@ func main() {
 	e := echo.New()
 	e.GET("/track", GetTrack)
 	e.GET("/player", FilterPlayerController)
+	e.GET("/player/lyric", GetLyric)
 	e.POST("/player", CreatePlayerListController)
+	e.PUT("/player", DeleteController)
+	e.GET("/play", OpenLinkController)
 	e.Logger.Fatal(e.Start(":8080"))
 }
 
@@ -82,6 +88,47 @@ func GetTrack(c echo.Context) error {
 	}
 	return c.JSON(http.StatusNotFound, "Song not found")
 }
+
+func OpenLinkController(c echo.Context) error {
+	xid, _ := strconv.Atoi(c.QueryParam("id"))
+	if c.QueryParam("id") == "" {
+		return c.JSON(http.StatusNotFound, "ID Not Found")
+	} else {
+		for _, xdata := range xVarPlayer {
+			//xarray2 := strings.Fields(xdata)
+			xarray2 := xdata.ID
+			//fmt.Println("xarray: ", xarray2)
+			//fmt.Println("xid: ", xid)
+			if xarray2 == xid {
+				xUrl := xdata.SongViewURL
+
+				var args []string
+				switch runtime.GOOS {
+				case "darwin":
+					args = []string{"open", xUrl}
+				case "windows":
+					args = []string{"cmd", "/c", "start", xUrl}
+				default:
+					args = []string{"xdg-open", xUrl}
+				}
+				cmd := exec.Command(args[0], args[1:]...)
+				err := cmd.Run()
+				if err != nil {
+					log.Printf("openinbrowser: %v\n", err)
+				}
+
+			}
+
+		}
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"messages": "Open selected track by ID",
+		})
+	}
+}
+
+//get all playerlist
+//get playerlist by ID
+//get lyric
 
 func FilterPlayerController(c echo.Context) error {
 
@@ -172,4 +219,58 @@ func CreatePlayerListController(c echo.Context) error {
 		//"total":    len(xUsers),
 	})
 
+}
+
+func GetLyric(c echo.Context) error {
+	xid, _ := strconv.Atoi(c.QueryParam("id"))
+
+	//xUsers[xid-1].UserName = xuserbind.UserName
+	for _, xdata := range xVarPlayer {
+		//xarray2 := strings.Fields(xdata)
+		xIDPlayer := xdata.ID
+
+		//fmt.Println("xarray: ", xarray2)
+		//fmt.Println("xid: ", xid)
+		if xIDPlayer == xid {
+			xArtisPlayer := xdata.ArtistName
+			xTrackPlayer := xdata.SongName
+
+			url := "https://api.lyrics.ovh/v1/" + xArtisPlayer + "/" + xTrackPlayer
+
+			req, _ := http.NewRequest("GET", url, nil)
+
+			res, _ := http.DefaultClient.Do(req)
+
+			defer res.Body.Close()
+			body, _ := ioutil.ReadAll(res.Body)
+			json.Unmarshal(body, &xVarLyric)
+			//fmt.Println(res)
+			//fmt.Println(string(body))
+
+			return c.JSON(http.StatusOK, map[string]interface{}{
+				"messages": "Lyric found",
+				"lyric":    xVarLyric,
+			})
+		}
+
+	}
+	return c.JSON(http.StatusNotFound, "Lyric didn't found")
+
+}
+
+func DeleteController(c echo.Context) error {
+	xid, _ := strconv.Atoi(c.QueryParam("id"))
+
+	if xid == len(xVarPlayer) {
+		xVarPlayer[xid-1] = xPlayerStruct{}
+		xVarPlayer = xVarPlayer[:len(xVarPlayer)-1]
+	} else {
+		xVarPlayer[xid-1] = xVarPlayer[len(xVarPlayer)-1]
+		xVarPlayer[len(xVarPlayer)-1] = xPlayerStruct{}
+		xVarPlayer = xVarPlayer[:len(xVarPlayer)-1]
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"messages": "Data already deleted",
+	})
 }
